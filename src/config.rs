@@ -21,9 +21,19 @@ impl Server {
 
 impl Default for Config {
     fn default() -> Self {
-        Self {
-            servers: Vec::new(),
+        let mut servers = Vec::new();
+
+        // inject default server from environment variable if available
+        if let Some(default_server) = option_env!("REMDIT_DEFAULT_SERVER") {
+            if !default_server.is_empty() {
+                servers.push(Server {
+                    addr: default_server.to_string(),
+                    key: None,
+                });
+            }
         }
+
+        Self { servers }
     }
 }
 

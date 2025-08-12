@@ -1,0 +1,5 @@
+
+[[servers]]
+addr = "http://localhost:30808"
+# key is optional for localhost
+# key = ""
