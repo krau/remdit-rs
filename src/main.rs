@@ -1,3 +1,4 @@
+use lexopt::prelude::*;
 use std::process;
 
 mod client;
@@ -10,65 +11,55 @@ use config::{load_config, Config};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const COMMIT: &str = "unknown";
 
-// Simple random number generator to replace fastrand
-struct SimpleRng {
-    state: u64,
-}
-
-impl SimpleRng {
-    fn new() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(12345);
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        // Linear congruential generator
-        self.state = self.state.wrapping_mul(1103515245).wrapping_add(12345);
-        self.state
-    }
-
-    fn usize(&mut self, max: usize) -> usize {
-        (self.next_u64() % max as u64) as usize
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let mut args = pico_args::Arguments::from_env();
+    let mut parser = lexopt::Parser::from_env();
+    let mut verbose = false;
+    let mut show_version = false;
+    let mut file_path: Option<String> = None;
 
-    // Handle help flag first
-    if args.contains(["-h", "--help"]) {
-        print_help();
-        process::exit(0);
+    while let Some(arg) = parser.next()? {
+        match arg {
+            Short('v') | Long("verbose") => {
+                verbose = true;
+            }
+            Short('V') | Long("version") => {
+                show_version = true;
+            }
+            Short('h') | Long("help") => {
+                print_help();
+                process::exit(0);
+            }
+            Value(val) => {
+                if file_path.is_none() {
+                    file_path = Some(val.string()?);
+                } else {
+                    anyhow::bail!("Multiple file arguments provided");
+                }
+            }
+            _ => return Err(arg.unexpected().into()),
+        }
     }
 
     // Handle version flag
-    if args.contains(["-V", "--version"]) {
+    if show_version {
         println!("Remdit Version: {}", VERSION);
         println!("Commit: {}", COMMIT);
         process::exit(0);
     }
 
-    let verbose = args.contains(["-v", "--verbose"]);
-
-    // Get the file path from free arguments
-    let file_path: String = args
-        .free_from_str()
-        .map_err(|_| anyhow::anyhow!("Missing file argument"))?;
-
-    // Check for unexpected arguments
-    let remaining = args.finish();
-    if !remaining.is_empty() {
-        anyhow::bail!("Unexpected arguments: {:?}", remaining);
-    }
-
     if verbose {
         println!("Debug mode enabled");
     }
+
+    // Get file path
+    let file_path = match file_path {
+        Some(path) => path,
+        None => {
+            print_help();
+            process::exit(1);
+        }
+    };
 
     // Validate file
     if !fileutil::is_exist(&file_path) {
@@ -128,8 +119,8 @@ async fn run(config: Config, file_path: std::path::PathBuf, verbose: bool) -> an
 
     // Randomly select a server
     let selected_server = {
-        let mut rng = SimpleRng::new();
-        valid_servers[rng.usize(valid_servers.len())].clone()
+        let mut rng = fastrand::Rng::new();
+        valid_servers[rng.usize(..valid_servers.len())].clone()
     };
 
     if verbose {
